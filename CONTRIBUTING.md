@@ -13,7 +13,7 @@ Contributions are welcome. Bug reports, docs, tests, and pull requests all help.
 
 ## Development
 
-Go 1.21 or newer. This module has no third-party dependencies — please keep it that way.
+Go 1.26 or newer. This module has no third-party dependencies — please keep it that way.
 
 ```bash
 gofmt -w .
