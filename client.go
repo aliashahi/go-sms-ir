@@ -262,6 +262,19 @@ func (c *Client) MessageReport(ctx context.Context, messageID int64) (*MessageRe
 	return &out, nil
 }
 
+// TodayPacks lists today's send packs.
+// GET /v1/send/pack
+// pageSize max is 100 (API default 100). pageNumber defaults to 1 when omitted.
+func (c *Client) TodayPacks(ctx context.Context, pageSize, pageNumber int) ([]LivePack, error) {
+	q := pageQuery(pageSize, pageNumber)
+	var out []LivePack
+	if _, err := c.doJSON(ctx, http.MethodGet, "/v1/send/pack", q, nil, &out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
 // PackReport returns messages in a pack.
 // GET /v1/send/pack/{packId}
 func (c *Client) PackReport(ctx context.Context, packID string) ([]MessageReport, error) {

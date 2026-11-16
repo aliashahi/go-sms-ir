@@ -52,3 +52,27 @@ func TestMessageReportMobileNumber(t *testing.T) {
 		t.Fatalf("deliveryState=%d", report.DeliveryState)
 	}
 }
+
+func TestMessageReportNullDeliveryState(t *testing.T) {
+	t.Parallel()
+	raw := `{
+		"messageId": 89545112,
+		"mobile": 91200000677,
+		"messageText": "hi",
+		"sendDateTime": 1628683626,
+		"lineNumber": 30004505000017,
+		"cost": 1.0,
+		"deliveryState": null,
+		"deliveryDateTime": null
+	}`
+	var report MessageReport
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.DeliveryState != 0 {
+		t.Fatalf("deliveryState=%d", report.DeliveryState)
+	}
+	if report.DeliveryDateTime != nil {
+		t.Fatalf("deliveryDateTime=%v", report.DeliveryDateTime)
+	}
+}

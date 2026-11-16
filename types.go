@@ -7,7 +7,7 @@ import (
 )
 
 // API business status codes returned in the JSON envelope "status" field.
-// See https://sms.ir documentation for the full table.
+// The full table, including codes without a constant, is in docs/statusCode.md.
 const (
 	StatusError              = 0
 	StatusOK                 = 1
@@ -146,7 +146,15 @@ type CancelScheduledResult struct {
 	HTTPStatus           int     `json:"-"`
 }
 
-// MessageReport is a sent-message report row.
+// LivePack is one row from GET /v1/send/pack (today's send packs).
+type LivePack struct {
+	PackID           string `json:"packId"`
+	RecipientCount   int    `json:"recipientCount"`
+	CreationDateTime int64  `json:"creationDateTime"`
+}
+
+// MessageReport is one sent message from GET /v1/send/{messageId}.
+// A null deliveryState decodes as 0.
 type MessageReport struct {
 	MessageID        int64      `json:"messageId"`
 	Mobile           FlexString `json:"mobile"`
@@ -156,6 +164,36 @@ type MessageReport struct {
 	Cost             float64    `json:"cost"`
 	DeliveryState    int        `json:"deliveryState"`
 	DeliveryDateTime *int64     `json:"deliveryDateTime"`
+}
+
+func (m *MessageReport) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		MessageID        int64      `json:"messageId"`
+		Mobile           FlexString `json:"mobile"`
+		MessageText      string     `json:"messageText"`
+		SendDateTime     int64      `json:"sendDateTime"`
+		LineNumber       int64      `json:"lineNumber"`
+		Cost             float64    `json:"cost"`
+		DeliveryState    *int       `json:"deliveryState"`
+		DeliveryDateTime *int64     `json:"deliveryDateTime"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*m = MessageReport{
+		MessageID:        aux.MessageID,
+		Mobile:           aux.Mobile,
+		MessageText:      aux.MessageText,
+		SendDateTime:     aux.SendDateTime,
+		LineNumber:       aux.LineNumber,
+		Cost:             aux.Cost,
+		DeliveryDateTime: aux.DeliveryDateTime,
+	}
+	if aux.DeliveryState != nil {
+		m.DeliveryState = *aux.DeliveryState
+	}
+
+	return nil
 }
 
 // ReceivedMessage is an inbound SMS row.

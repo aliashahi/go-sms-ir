@@ -94,15 +94,16 @@ client := smsir.New(
 | `SendLikeToLike` | `POST /v1/send/likeToLike` | Pair messages ↔ mobiles |
 | `SendVerify` | `POST /v1/send/verify` | Templated / OTP (high priority) |
 | `CancelScheduled` | `DELETE /v1/send/scheduled/{packId}` | Cancel scheduled pack |
-| `MessageReport` | `GET /v1/send/{messageId}` | One message report |
-| `PackReport` | `GET /v1/send/pack/{packId}` | Pack report |
-| `TodayReport` | `GET /v1/send/live` | Today’s outbound |
-| `ArchiveReport` | `GET /v1/send/archive` | Archived outbound |
+| [`MessageReport`](docs/sendReports.md) | `GET /v1/send/{messageId}` | Delivery status for one message |
+| [`TodayPacks`](docs/livePack.md) | `GET /v1/send/pack` | Today’s send packs |
+| `PackReport` | `GET /v1/send/pack/{packId}` | Messages in one pack |
+| `TodayReport` | `GET /v1/send/live` | Today’s outbound messages |
+| `ArchiveReport` | `GET /v1/send/archive` | Archived outbound messages |
 | `LatestReceived` | `GET /v1/receive/latest` | Latest inbound |
 | `TodayReceived` | `GET /v1/receive/live` | Today’s inbound |
 | `ArchiveReceived` | `GET /v1/receive/archive` | Archived inbound |
 | `Credit` | `GET /v1/credit` | Account credit |
-| `Lines` | `GET /v1/line` | Sender lines |
+| [`Lines`](docs/line.md) | `GET /v1/line` | Sender lines ready to send |
 | `Templates` | `GET /v1/templates` | Verify templates |
 
 Official docs: [sms.ir REST API](https://sms.ir/rest-api/).
@@ -167,24 +168,7 @@ if err != nil {
 _ = res
 ```
 
-Common business codes (partial):
-
-| Code | Meaning |
-|------|---------|
-| 0 | Error |
-| 1 | OK |
-| 10 | Invalid API key |
-| 11 | Inactive API key |
-| 12 | IP restricted |
-| 20 | Rate limited |
-| 102 | Insufficient credit |
-| 104 | Invalid mobile |
-| 113 | Template not found |
-| 114 | Parameter value too long |
-| 115 | Blacklisted |
-| 116 | Missing parameter |
-
-Delivery states on reports: `DeliveryReachedPhone` (1), …, `DeliveryBlacklist` (7), `DeliveryUnknown` (8).
+Business and delivery codes, including the Go constants, are listed in [docs/statusCode.md](docs/statusCode.md).
 
 Empty API key → `smsir.ErrNotConfigured`.
 
@@ -220,6 +204,10 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Links
 
+- [Message report](docs/sendReports.md)
+- [Today’s send packs](docs/livePack.md)
+- [Sender lines](docs/line.md)
+- [Status codes](docs/statusCode.md)
 - [SMS.ir](https://sms.ir)
 - [REST API docs](https://sms.ir/rest-api/)
 - [Official Python SDK](https://github.com/IPeCompany/SmsPanelV2.Python)

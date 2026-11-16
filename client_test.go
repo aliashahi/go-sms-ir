@@ -146,6 +146,87 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+func TestMessageReport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/send/89545112" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("X-API-KEY") != "key" {
+			t.Fatalf("api key=%q", r.Header.Get("X-API-KEY"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data": map[string]any{
+				"messageId":        89545112,
+				"mobile":           91200000677,
+				"messageText":      "سرویس پیامکی ایده پردازان با بیش از یک دهه سابقه همراه شماست",
+				"sendDateTime":     1628683626,
+				"lineNumber":       30004505000017,
+				"cost":             1.0,
+				"deliveryState":    1,
+				"deliveryDateTime": 1628683629,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	report, err := cli.MessageReport(context.Background(), 89545112)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.MessageID != 89545112 || report.Mobile.String() != "91200000677" {
+		t.Fatalf("report=%+v", report)
+	}
+	if report.SendDateTime != 1628683626 || report.LineNumber != 30004505000017 || report.Cost != 1 {
+		t.Fatalf("report=%+v", report)
+	}
+	if report.DeliveryState != DeliveryReachedPhone || report.DeliveryDateTime == nil || *report.DeliveryDateTime != 1628683629 {
+		t.Fatalf("delivery=%d %v", report.DeliveryState, report.DeliveryDateTime)
+	}
+}
+
+func TestTodayPacks(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/send/pack" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		if r.URL.Query().Get("pageNumber") != "1" || r.URL.Query().Get("pageSize") != "100" {
+			t.Fatalf("query=%s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data": []map[string]any{
+				{
+					"packId":           "e7c09e23f0db4834b9bcb79e7b054f4c",
+					"recipientCount":   100,
+					"creationDateTime": 1628683626,
+				},
+				{
+					"packId":           "0cf3017fd9d84babbb5ed5579104dab2",
+					"recipientCount":   200,
+					"creationDateTime": 1628683626,
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	packs, err := cli.TodayPacks(context.Background(), 100, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packs) != 2 || packs[0].PackID != "e7c09e23f0db4834b9bcb79e7b054f4c" || packs[0].RecipientCount != 100 {
+		t.Fatalf("packs=%+v", packs)
+	}
+	if packs[1].PackID != "0cf3017fd9d84babbb5ed5579104dab2" || packs[1].CreationDateTime != 1628683626 {
+		t.Fatalf("packs=%+v", packs)
+	}
+}
+
 func TestNotConfigured(t *testing.T) {
 	cli := New("", 0)
 	_, err := cli.SendSMS(context.Background(), "0912", "x")
