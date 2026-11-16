@@ -148,22 +148,22 @@ type CancelScheduledResult struct {
 
 // MessageReport is a sent-message report row.
 type MessageReport struct {
-	MessageID        int64   `json:"messageId"`
-	Mobile           string  `json:"mobile"`
-	MessageText      string  `json:"messageText"`
-	SendDateTime     int64   `json:"sendDateTime"`
-	LineNumber       int64   `json:"lineNumber"`
-	Cost             float64 `json:"cost"`
-	DeliveryState    int     `json:"deliveryState"`
-	DeliveryDateTime *int64  `json:"deliveryDateTime"`
+	MessageID        int64      `json:"messageId"`
+	Mobile           FlexString `json:"mobile"`
+	MessageText      string     `json:"messageText"`
+	SendDateTime     int64      `json:"sendDateTime"`
+	LineNumber       int64      `json:"lineNumber"`
+	Cost             float64    `json:"cost"`
+	DeliveryState    int        `json:"deliveryState"`
+	DeliveryDateTime *int64     `json:"deliveryDateTime"`
 }
 
 // ReceivedMessage is an inbound SMS row.
 type ReceivedMessage struct {
-	Mobile           string `json:"mobile"`
-	MessageText      string `json:"messageText"`
-	ReceivedDateTime int64  `json:"receivedDateTime"`
-	LineNumber       int64  `json:"lineNumber"`
+	Mobile           FlexString `json:"mobile"`
+	MessageText      string     `json:"messageText"`
+	ReceivedDateTime int64      `json:"receivedDateTime"`
+	LineNumber       int64      `json:"lineNumber"`
 }
 
 // TemplateParameter describes a #NAME# placeholder in a template.
