@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -48,6 +49,80 @@ func TestSendBulkSuccess(t *testing.T) {
 	}
 	if res.PackID != "pack-1" || len(res.MessageIDs) != 1 || res.MessageIDs[0] != 111 {
 		t.Fatalf("res=%+v", res)
+	}
+}
+
+func TestSendViaURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/send" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("X-API-KEY") != "" {
+			t.Fatalf("api key=%q", r.Header.Get("X-API-KEY"))
+		}
+		q := r.URL.Query()
+		if q.Get("username") != "user" || q.Get("password") != "secret" {
+			t.Fatalf("query=%s", r.URL.RawQuery)
+		}
+		if q.Get("line") != "30004505000017" || q.Get("mobile") != "09121234567" || q.Get("text") != "hello" {
+			t.Fatalf("query=%s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data":    map[string]any{"messageId": 89545112, "cost": 1.0},
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	res, err := cli.SendViaURL(context.Background(), URLSendRequest{
+		Username: "user",
+		Password: "secret",
+		Line:     30004505000017,
+		Mobile:   "+989121234567",
+		Text:     "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MessageID != 89545112 || res.Cost != 1 {
+		t.Fatalf("res=%+v", res)
+	}
+}
+
+func TestCancelScheduled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/v1/send/scheduled/pack-1" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data":    map[string]any{"returnedCreditCount": 10, "smsCount": 5},
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	res, err := cli.CancelScheduled(context.Background(), "pack-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ReturnedCreditCount != 10 || res.SMSCount != 5 {
+		t.Fatalf("res=%+v", res)
+	}
+}
+
+func TestSendVerifyValueTooLong(t *testing.T) {
+	cli := New("key", 0)
+	_, err := cli.SendVerify(context.Background(), VerifyRequest{
+		Mobile:     "09121234567",
+		TemplateID: 123456,
+		Parameters: []VerifyParameter{{Name: "#CODE#", Value: "12345678901234567890123456"}},
+	})
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }
 
@@ -358,6 +433,86 @@ func TestTodayPacks(t *testing.T) {
 	}
 	if packs[1].PackID != "0cf3017fd9d84babbb5ed5579104dab2" || packs[1].CreationDateTime != 1628683626 {
 		t.Fatalf("packs=%+v", packs)
+	}
+}
+
+func TestPackAndInboundReports(t *testing.T) {
+	var gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		switch r.URL.Path {
+		case "/v1/send/pack/pack-1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": 1, "message": "موفق",
+				"data": []map[string]any{{
+					"messageId": 89545112, "mobile": 91200000677, "messageText": "hi",
+					"sendDateTime": 1628683626, "lineNumber": 30004505000017, "cost": 1.0,
+					"deliveryState": 1, "deliveryDateTime": 1628683629,
+				}},
+			})
+		case "/v1/receive/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": 1, "message": "موفق",
+				"data": []map[string]any{{
+					"receiveReturnId": 123456789, "messageText": "hi",
+					"number": 30004505000017, "mobile": 91200000002, "receivedDateTime": 1628683625,
+				}},
+			})
+		case "/v1/receive/live":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": 1, "message": "موفق",
+				"data": []map[string]any{{
+					"messageText": "hi", "number": 30004505000017,
+					"mobile": 91200000002, "receivedDateTime": 1628683625,
+				}},
+			})
+		case "/v1/receive/archive":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": 1, "message": "موفق",
+				"data": []map[string]any{{
+					"receiveReturnId": 12345678987, "messageText": "hi",
+					"number": 30004505000017, "mobile": 91200000002, "receivedDateTime": 1628683625,
+				}},
+			})
+		default:
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	ctx := context.Background()
+
+	pack, err := cli.PackReport(ctx, "pack-1")
+	if err != nil || len(pack) != 1 || pack[0].MessageID != 89545112 {
+		t.Fatalf("pack=%v err=%v", pack, err)
+	}
+
+	latest, err := cli.LatestReceived(ctx, 20, 30004505000017)
+	if err != nil || len(latest) != 1 || latest[0].ReceiveReturnID != 123456789 || latest[0].Number != 30004505000017 {
+		t.Fatalf("latest=%v err=%v", latest, err)
+	}
+	if gotPath != "/v1/receive/latest" || !strings.Contains(gotQuery, "count=20") || !strings.Contains(gotQuery, "lineNumber=30004505000017") {
+		t.Fatalf("latest query %s %s", gotPath, gotQuery)
+	}
+
+	newest := true
+	live, err := cli.TodayReceived(ctx, 20, 3, &newest, "9120000002")
+	if err != nil || len(live) != 1 || live[0].Number != 30004505000017 || live[0].Mobile.String() != "91200000002" {
+		t.Fatalf("live=%v err=%v", live, err)
+	}
+	if !strings.Contains(gotQuery, "sortByNewest=true") || !strings.Contains(gotQuery, "mobile=09120000002") {
+		t.Fatalf("live query %s", gotQuery)
+	}
+
+	from := int64(1613465574)
+	archived, err := cli.ArchiveReceived(ctx, &from, nil, 100, 1, "")
+	if err != nil || len(archived) != 1 || archived[0].ReceiveReturnID != 12345678987 {
+		t.Fatalf("archive=%v err=%v", archived, err)
+	}
+	if !strings.Contains(gotQuery, "fromDate=1613465574") || strings.Contains(gotQuery, "mobile=") {
+		t.Fatalf("archive query %s", gotQuery)
 	}
 }
 

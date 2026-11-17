@@ -25,7 +25,7 @@ report, err := client.MessageReport(ctx, messageID)
 | `deliveryState` | `DeliveryState int` | Nullable. JSON `null` decodes as `0` |
 | `deliveryDateTime` | `DeliveryDateTime *int64` | Nullable Unix time. `nil` when absent |
 
-Delivery codes are in [statusCode.md](statusCode.md).
+Delivery codes are in [statusCode.md](../statusCode.md).
 
 ## Example
 

@@ -89,26 +89,27 @@ client := smsir.New(
 
 | Method | HTTP | Description |
 |--------|------|-------------|
-| `SendSMS` | `POST /v1/send/bulk` | Single free-text SMS (wrapper around bulk) |
-| `SendBulk` | `POST /v1/send/bulk` | One text → many mobiles (max 100) |
-| `SendLikeToLike` | `POST /v1/send/likeToLike` | Pair messages ↔ mobiles |
-| `SendVerify` | `POST /v1/send/verify` | Templated / OTP (high priority) |
-| `CancelScheduled` | `DELETE /v1/send/scheduled/{packId}` | Cancel scheduled pack |
-| [`MessageReport`](docs/sendReports.md) | `GET /v1/send/{messageId}` | Delivery status for one message |
-| [`TodayPacks`](docs/livePack.md) | `GET /v1/send/pack` | Today’s send packs |
-| `PackReport` | `GET /v1/send/pack/{packId}` | Messages in one pack |
-| `TodayReport` | `GET /v1/send/live` | Today’s outbound messages |
-| `ArchiveReport` | `GET /v1/send/archive` | Archived outbound messages |
-| `LatestReceived` | `GET /v1/receive/latest` | Latest inbound |
-| `TodayReceived` | `GET /v1/receive/live` | Today’s inbound |
-| `ArchiveReceived` | `GET /v1/receive/archive` | Archived inbound |
+| [`SendSMS`](docs/sending/bulk.md) | `POST /v1/send/bulk` | Single free-text SMS (wrapper around bulk) |
+| [`SendBulk`](docs/sending/bulk.md) | `POST /v1/send/bulk` | One text → many mobiles (max 100) |
+| [`SendLikeToLike`](docs/sending/likeToLike.md) | `POST /v1/send/likeToLike` | Pair messages ↔ mobiles |
+| [`SendVerify`](docs/sending/verify.md) | `POST /v1/send/verify` | Templated / OTP (high priority) |
+| [`SendViaURL`](docs/sending/sendViaUrl.md) | `GET /v1/send` | One SMS via query string (no `X-API-KEY`) |
+| [`CancelScheduled`](docs/sending/deleteScheduled.md) | `DELETE /v1/send/scheduled/{packId}` | Cancel scheduled pack |
+| [`MessageReport`](docs/reports/sendReports.md) | `GET /v1/send/{messageId}` | Delivery status for one message |
+| [`TodayPacks`](docs/reports/livePack.md) | `GET /v1/send/pack` | Today’s send packs |
+| [`PackReport`](docs/reports/sendPack.md) | `GET /v1/send/pack/{packId}` | Messages in one pack |
+| [`TodayReport`](docs/reports/sendLive.md) | `GET /v1/send/live` | Today’s outbound messages |
+| [`ArchiveReport`](docs/reports/sendArchive.md) | `GET /v1/send/archive` | Archived outbound messages |
+| [`LatestReceived`](docs/reports/receiveLatest.md) | `GET /v1/receive/latest` | Unread inbound, then marked read |
+| [`TodayReceived`](docs/reports/receiveLive.md) | `GET /v1/receive/live` | Today’s inbound |
+| [`ArchiveReceived`](docs/reports/receiveArchived.md) | `GET /v1/receive/archive` | Archived inbound |
 | `Credit` | `GET /v1/credit` | Account credit |
 | [`Lines`](docs/line.md) | `GET /v1/line` | Sender lines ready to send |
-| [`Templates`](docs/templates.md) | `GET /v1/templates` | List verify templates |
-| [`Template`](docs/template.md) | `GET /v1/templates/{templateId}` | One verify template |
-| [`AddTemplate`](docs/addTemplate.md) | `POST /v1/templates` | Register a verify template |
-| [`ModifyTemplate`](docs/modifyTemplate.md) | `PUT /v1/templates/{templateId}` | Update a verify template |
-| [`RemoveTemplate`](docs/removeTemplate.md) | `DELETE /v1/templates/{templateId}` | Delete a verify template |
+| [`Templates`](docs/template/templates.md) | `GET /v1/templates` | List verify templates |
+| [`Template`](docs/template/template.md) | `GET /v1/templates/{templateId}` | One verify template |
+| [`AddTemplate`](docs/template/addTemplate.md) | `POST /v1/templates` | Register a verify template |
+| [`ModifyTemplate`](docs/template/modifyTemplate.md) | `PUT /v1/templates/{templateId}` | Update a verify template |
+| [`RemoveTemplate`](docs/template/removeTemplate.md) | `DELETE /v1/templates/{templateId}` | Delete a verify template |
 
 Official docs: [sms.ir REST API](https://sms.ir/rest-api/).
 
@@ -139,7 +140,8 @@ Notes from the API:
 
 - Max **100** mobiles per request
 - `MessageIDs[i] == 0` → that mobile is blacklisted
-- Optional `SendDateTime` is Unix time (UTC)
+- Optional `SendDateTime` is Unix time (UTC), from now through 365 days ahead
+- Cancel a scheduled pack up to 3 minutes before send time with `CancelScheduled`
 
 ## Phone numbers
 
@@ -208,15 +210,28 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Links
 
-- [Message report](docs/sendReports.md)
-- [Today’s send packs](docs/livePack.md)
+- [Introduction](docs/introduction.md)
+- [Sandbox](docs/sandbox.md)
+- [Bulk send](docs/sending/bulk.md)
+- [Like-to-like send](docs/sending/likeToLike.md)
+- [Verify send](docs/sending/verify.md)
+- [Cancel scheduled](docs/sending/deleteScheduled.md)
+- [Send via URL](docs/sending/sendViaUrl.md)
+- [Message report](docs/reports/sendReports.md)
+- [Today’s send packs](docs/reports/livePack.md)
+- [Pack report](docs/reports/sendPack.md)
+- [Today’s sent messages](docs/reports/sendLive.md)
+- [Archived sent messages](docs/reports/sendArchive.md)
+- [Latest unread inbound](docs/reports/receiveLatest.md)
+- [Today’s inbound](docs/reports/receiveLive.md)
+- [Archived inbound](docs/reports/receiveArchived.md)
 - [Sender lines](docs/line.md)
 - [Status codes](docs/statusCode.md)
-- [Templates](docs/templates.md)
-- [Template](docs/template.md)
-- [Add template](docs/addTemplate.md)
-- [Modify template](docs/modifyTemplate.md)
-- [Remove template](docs/removeTemplate.md)
+- [Templates](docs/template/templates.md)
+- [Template](docs/template/template.md)
+- [Add template](docs/template/addTemplate.md)
+- [Modify template](docs/template/modifyTemplate.md)
+- [Remove template](docs/template/removeTemplate.md)
 - [SMS.ir](https://sms.ir)
 - [REST API docs](https://sms.ir/rest-api/)
 - [Official Python SDK](https://github.com/IPeCompany/SmsPanelV2.Python)

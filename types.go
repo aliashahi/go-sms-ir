@@ -45,6 +45,10 @@ const (
 	TemplateTypeOther       byte = 100
 )
 
+// SandboxVerifyTemplateID is the verify template bundled with a sandbox API key.
+// The template text is "کد تایید شما: #CODE#".
+const SandboxVerifyTemplateID = 123456
+
 // Delivery status codes from SMS.ir message reports.
 const (
 	DeliveryReachedPhone      = 1
@@ -141,9 +145,19 @@ type VerifyResult struct {
 
 // CancelScheduledResult is returned by DELETE /v1/send/scheduled/{packId}.
 type CancelScheduledResult struct {
-	ReturnedCreditAmount float64 `json:"returnedCreditAmount"`
-	SMSCount             int     `json:"smsCount"`
-	HTTPStatus           int     `json:"-"`
+	ReturnedCreditCount float64 `json:"returnedCreditCount"`
+	SMSCount            int     `json:"smsCount"`
+	HTTPStatus          int     `json:"-"`
+}
+
+// URLSendRequest is GET /v1/send. Password is the panel private key.
+// This call does not use the X-API-KEY header.
+type URLSendRequest struct {
+	Username string
+	Password string
+	Line     int64
+	Mobile   string
+	Text     string
 }
 
 // LivePack is one row from GET /v1/send/pack (today's send packs).
@@ -196,12 +210,14 @@ func (m *MessageReport) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ReceivedMessage is an inbound SMS row.
+// ReceivedMessage is an inbound SMS row from the receive reports.
+// Number is the receiving line. ReceiveReturnID is set on latest and archive rows.
 type ReceivedMessage struct {
-	Mobile           FlexString `json:"mobile"`
+	ReceiveReturnID  int64      `json:"receiveReturnId"`
 	MessageText      string     `json:"messageText"`
+	Number           int64      `json:"number"`
+	Mobile           FlexString `json:"mobile"`
 	ReceivedDateTime int64      `json:"receivedDateTime"`
-	LineNumber       int64      `json:"lineNumber"`
 }
 
 // TemplateParameter describes a #NAME# placeholder in a template.

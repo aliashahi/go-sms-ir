@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -110,6 +111,7 @@ func (c *Client) SendSMS(ctx context.Context, mobile, message string) (*BulkSend
 }
 
 // SendBulk sends one message to many mobiles (max 100).
+// SendDateTime, when set, is Unix UTC from now through 365 days ahead.
 // POST /v1/send/bulk
 func (c *Client) SendBulk(ctx context.Context, req BulkSendRequest) (*BulkSendResult, error) {
 	if !c.Configured() {
@@ -215,11 +217,22 @@ func (c *Client) SendVerify(ctx context.Context, req VerifyRequest) (*VerifyResu
 	if len(req.Parameters) == 0 {
 		return nil, fmt.Errorf("smsir: parameters are required")
 	}
+	params := make([]VerifyParameter, len(req.Parameters))
+	for i, p := range req.Parameters {
+		name := strings.Trim(strings.TrimSpace(p.Name), "#")
+		if name == "" || strings.TrimSpace(p.Value) == "" {
+			return nil, fmt.Errorf("smsir: parameter name and value are required")
+		}
+		if utf8.RuneCountInString(p.Value) > 25 {
+			return nil, fmt.Errorf("smsir: parameter value is longer than 25 characters")
+		}
+		params[i] = VerifyParameter{Name: name, Value: p.Value}
+	}
 
 	body := map[string]any{
 		"mobile":     FormatMobile(req.Mobile),
 		"templateId": req.TemplateID,
-		"parameters": req.Parameters,
+		"parameters": params,
 	}
 
 	var out VerifyResult
@@ -232,7 +245,50 @@ func (c *Client) SendVerify(ctx context.Context, req VerifyRequest) (*VerifyResu
 	return &out, nil
 }
 
-// CancelScheduled deletes a scheduled pack.
+// SendViaURL sends one SMS with username, password, line, mobile, and text in the query string.
+// GET /v1/send
+// SMS.ir also accepts POST with the same query. This call does not send X-API-KEY.
+func (c *Client) SendViaURL(ctx context.Context, req URLSendRequest) (*VerifyResult, error) {
+	if c == nil || c.httpClient == nil {
+		return nil, ErrNotConfigured
+	}
+	username := strings.TrimSpace(req.Username)
+	password := strings.TrimSpace(req.Password)
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("smsir: username and password are required")
+	}
+	line := req.Line
+	if line == 0 {
+		line = c.lineNumber
+	}
+	if line == 0 {
+		return nil, fmt.Errorf("smsir: line number is required")
+	}
+	if strings.TrimSpace(req.Mobile) == "" {
+		return nil, fmt.Errorf("smsir: mobile is required")
+	}
+	if strings.TrimSpace(req.Text) == "" {
+		return nil, fmt.Errorf("smsir: message text is required")
+	}
+
+	q := url.Values{}
+	q.Set("username", username)
+	q.Set("password", password)
+	q.Set("line", strconv.FormatInt(line, 10))
+	q.Set("mobile", FormatMobile(req.Mobile))
+	q.Set("text", req.Text)
+
+	var out VerifyResult
+	httpStatus, err := c.do(ctx, http.MethodGet, "/v1/send", q, nil, &out, false)
+	out.HTTPStatus = httpStatus
+	if err != nil {
+		return &out, err
+	}
+
+	return &out, nil
+}
+
+// CancelScheduled deletes a scheduled pack up to 3 minutes before its send time.
 // DELETE /v1/send/scheduled/{packId}
 func (c *Client) CancelScheduled(ctx context.Context, packID string) (*CancelScheduledResult, error) {
 	if !c.Configured() {
@@ -282,8 +338,15 @@ func (c *Client) TodayPacks(ctx context.Context, pageSize, pageNumber int) ([]Li
 // PackReport returns messages in a pack.
 // GET /v1/send/pack/{packId}
 func (c *Client) PackReport(ctx context.Context, packID string) ([]MessageReport, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+	packID = strings.TrimSpace(packID)
+	if packID == "" {
+		return nil, fmt.Errorf("smsir: packId is required")
+	}
 	var out []MessageReport
-	path := "/v1/send/pack/" + url.PathEscape(strings.TrimSpace(packID))
+	path := "/v1/send/pack/" + url.PathEscape(packID)
 	if _, err := c.doJSON(ctx, http.MethodGet, path, nil, nil, &out); err != nil {
 		return nil, err
 	}
@@ -291,8 +354,9 @@ func (c *Client) PackReport(ctx context.Context, packID string) ([]MessageReport
 	return out, nil
 }
 
-// TodayReport lists today's sent messages.
+// TodayReport lists messages sent today.
 // GET /v1/send/live
+// pageSize max is 100 (API default 100). pageNumber defaults to 1 when omitted.
 func (c *Client) TodayReport(ctx context.Context, pageSize, pageNumber int) ([]MessageReport, error) {
 	q := pageQuery(pageSize, pageNumber)
 	var out []MessageReport
@@ -303,8 +367,9 @@ func (c *Client) TodayReport(ctx context.Context, pageSize, pageNumber int) ([]M
 	return out, nil
 }
 
-// ArchiveReport lists archived sent messages.
+// ArchiveReport lists sent messages through the end of the previous day.
 // GET /v1/send/archive
+// fromDate and toDate are Unix UTC. pageSize max is 100 (API default 100).
 func (c *Client) ArchiveReport(ctx context.Context, fromDate, toDate *int64, pageSize, pageNumber int) ([]MessageReport, error) {
 	q := pageQuery(pageSize, pageNumber)
 	if fromDate != nil {
@@ -321,12 +386,17 @@ func (c *Client) ArchiveReport(ctx context.Context, fromDate, toDate *int64, pag
 	return out, nil
 }
 
-// LatestReceived returns the latest inbound messages.
+// LatestReceived returns unread inbound messages and marks them read.
+// Each message is returned only once.
 // GET /v1/receive/latest
-func (c *Client) LatestReceived(ctx context.Context, count int) ([]ReceivedMessage, error) {
+// count max is 100 (API default 100). lineNumber 0 returns every line on this API key.
+func (c *Client) LatestReceived(ctx context.Context, count int, lineNumber int64) ([]ReceivedMessage, error) {
 	q := url.Values{}
 	if count > 0 {
 		q.Set("count", strconv.Itoa(count))
+	}
+	if lineNumber > 0 {
+		q.Set("lineNumber", strconv.FormatInt(lineNumber, 10))
 	}
 	var out []ReceivedMessage
 	if _, err := c.doJSON(ctx, http.MethodGet, "/v1/receive/latest", q, nil, &out); err != nil {
@@ -336,10 +406,19 @@ func (c *Client) LatestReceived(ctx context.Context, count int) ([]ReceivedMessa
 	return out, nil
 }
 
-// TodayReceived lists today's inbound messages.
+// TodayReceived lists inbound messages for today.
+// Early in the day this can still include yesterday.
 // GET /v1/receive/live
-func (c *Client) TodayReceived(ctx context.Context, pageSize, pageNumber int) ([]ReceivedMessage, error) {
+// pageSize max is 100 (API default 100). A nil sortByNewest omits the flag (API default is oldest first).
+// An empty mobile lists every sender.
+func (c *Client) TodayReceived(ctx context.Context, pageSize, pageNumber int, sortByNewest *bool, mobile string) ([]ReceivedMessage, error) {
 	q := pageQuery(pageSize, pageNumber)
+	if sortByNewest != nil {
+		q.Set("sortByNewest", strconv.FormatBool(*sortByNewest))
+	}
+	if strings.TrimSpace(mobile) != "" {
+		q.Set("mobile", FormatMobile(mobile))
+	}
 	var out []ReceivedMessage
 	if _, err := c.doJSON(ctx, http.MethodGet, "/v1/receive/live", q, nil, &out); err != nil {
 		return nil, err
@@ -348,15 +427,19 @@ func (c *Client) TodayReceived(ctx context.Context, pageSize, pageNumber int) ([
 	return out, nil
 }
 
-// ArchiveReceived lists archived inbound messages.
+// ArchiveReceived lists inbound messages through the end of the previous day.
 // GET /v1/receive/archive
-func (c *Client) ArchiveReceived(ctx context.Context, fromDate, toDate *int64, pageSize, pageNumber int) ([]ReceivedMessage, error) {
+// fromDate and toDate are Unix UTC. An empty mobile lists every sender.
+func (c *Client) ArchiveReceived(ctx context.Context, fromDate, toDate *int64, pageSize, pageNumber int, mobile string) ([]ReceivedMessage, error) {
 	q := pageQuery(pageSize, pageNumber)
 	if fromDate != nil {
 		q.Set("fromDate", strconv.FormatInt(*fromDate, 10))
 	}
 	if toDate != nil {
 		q.Set("toDate", strconv.FormatInt(*toDate, 10))
+	}
+	if strings.TrimSpace(mobile) != "" {
+		q.Set("mobile", FormatMobile(mobile))
 	}
 	var out []ReceivedMessage
 	if _, err := c.doJSON(ctx, http.MethodGet, "/v1/receive/archive", q, nil, &out); err != nil {
@@ -539,7 +622,14 @@ func pageQuery(pageSize, pageNumber int) url.Values {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, query url.Values, reqBody any, dataOut any) (httpStatus int, err error) {
-	if !c.Configured() {
+	return c.do(ctx, method, path, query, reqBody, dataOut, true)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, reqBody any, dataOut any, requireKey bool) (httpStatus int, err error) {
+	if c == nil || c.httpClient == nil {
+		return 0, ErrNotConfigured
+	}
+	if requireKey && !c.Configured() {
 		return 0, ErrNotConfigured
 	}
 
@@ -561,7 +651,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 	if err != nil {
 		return 0, fmt.Errorf("smsir: build request: %w", err)
 	}
-	req.Header.Set("X-API-KEY", c.apiKey)
+	if requireKey {
+		req.Header.Set("X-API-KEY", c.apiKey)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.userAgent)
 	if reqBody != nil {
