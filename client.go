@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,9 @@ const (
 	defaultUserAgent = "go-sms-ir/1.0"
 	maxBodyBytes     = 1 << 20
 )
+
+// templatePlaceholder matches a #NAME# token in template text.
+var templatePlaceholder = regexp.MustCompile(`#[^#\s]+#`)
 
 // Client talks to api.sms.ir using an X-API-KEY.
 type Client struct {
@@ -387,6 +391,8 @@ func (c *Client) Lines(ctx context.Context) ([]int64, error) {
 // Templates lists verify templates (panel fast-send).
 // Only templates with [TemplateStatusApproved] can be used with [Client.SendVerify].
 // GET /v1/templates
+// pageNumber defaults to 1 and pageSize to 10 when 0. pageSize max is 100.
+// A nil status lists every review state.
 func (c *Client) Templates(ctx context.Context, pageNumber, pageSize int, status *byte) ([]Template, error) {
 	q := pageQuery(pageSize, pageNumber)
 	if status != nil {
@@ -398,6 +404,126 @@ func (c *Client) Templates(ctx context.Context, pageNumber, pageSize int, status
 	}
 
 	return out, nil
+}
+
+// Template returns one verify template.
+// GET /v1/templates/{templateId}
+func (c *Client) Template(ctx context.Context, templateID int) (*Template, error) {
+	if err := requireTemplateID(templateID); err != nil {
+		return nil, err
+	}
+	var out Template
+	if _, err := c.doJSON(ctx, http.MethodGet, templatePath(templateID), nil, nil, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// AddTemplate registers a verify template. It stays pending until SMS.ir approves it.
+// POST /v1/templates
+func (c *Client) AddTemplate(ctx context.Context, req TemplateRequest) (int, error) {
+	if !c.Configured() {
+		return 0, ErrNotConfigured
+	}
+	body, err := templateBody(req)
+	if err != nil {
+		return 0, err
+	}
+	var id int
+	if _, err := c.doJSON(ctx, http.MethodPost, "/v1/templates", nil, body, &id); err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+
+// ModifyTemplate updates a template that is not pending review.
+// The template returns to pending until it is approved again.
+// PUT /v1/templates/{templateId}
+func (c *Client) ModifyTemplate(ctx context.Context, templateID int, req TemplateRequest) (int, error) {
+	if !c.Configured() {
+		return 0, ErrNotConfigured
+	}
+	if err := requireTemplateID(templateID); err != nil {
+		return 0, err
+	}
+	body, err := templateBody(req)
+	if err != nil {
+		return 0, err
+	}
+	var id int
+	if _, err := c.doJSON(ctx, http.MethodPut, templatePath(templateID), nil, body, &id); err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+
+// RemoveTemplate deletes a verify template. Sent-message reports are kept.
+// DELETE /v1/templates/{templateId}
+func (c *Client) RemoveTemplate(ctx context.Context, templateID int) error {
+	if !c.Configured() {
+		return ErrNotConfigured
+	}
+	if err := requireTemplateID(templateID); err != nil {
+		return err
+	}
+	var removed bool
+	if _, err := c.doJSON(ctx, http.MethodDelete, templatePath(templateID), nil, nil, &removed); err != nil {
+		return err
+	}
+	if !removed {
+		return fmt.Errorf("smsir: template was not removed")
+	}
+
+	return nil
+}
+
+func requireTemplateID(templateID int) error {
+	if templateID <= 0 {
+		return fmt.Errorf("smsir: templateId is required")
+	}
+
+	return nil
+}
+
+func templatePath(templateID int) string {
+	return "/v1/templates/" + strconv.Itoa(templateID)
+}
+
+func templateBody(req TemplateRequest) (map[string]any, error) {
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return nil, fmt.Errorf("smsir: title is required")
+	}
+	text := req.TemplateText
+	if strings.TrimSpace(text) == "" {
+		return nil, fmt.Errorf("smsir: templateText is required")
+	}
+	if !templatePlaceholder.MatchString(text) {
+		return nil, fmt.Errorf("smsir: templateText must include a #PARAMETER# placeholder")
+	}
+	body := map[string]any{
+		"title":        title,
+		"templateText": text,
+	}
+	if req.Type != 0 {
+		body["type"] = req.Type
+	}
+	if len(req.Parameters) > 0 {
+		params := make([]TemplateParameter, len(req.Parameters))
+		for i, p := range req.Parameters {
+			name := strings.Trim(strings.TrimSpace(p.Name), "#")
+			if name == "" {
+				return nil, fmt.Errorf("smsir: parameter name is required")
+			}
+			params[i] = TemplateParameter{Name: name, Description: p.Description}
+		}
+		body["parameters"] = params
+	}
+
+	return body, nil
 }
 
 func pageQuery(pageSize, pageNumber int) url.Values {

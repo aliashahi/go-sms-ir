@@ -104,14 +104,18 @@ client := smsir.New(
 | `ArchiveReceived` | `GET /v1/receive/archive` | Archived inbound |
 | `Credit` | `GET /v1/credit` | Account credit |
 | [`Lines`](docs/line.md) | `GET /v1/line` | Sender lines ready to send |
-| `Templates` | `GET /v1/templates` | Verify templates |
+| [`Templates`](docs/templates.md) | `GET /v1/templates` | List verify templates |
+| [`Template`](docs/template.md) | `GET /v1/templates/{templateId}` | One verify template |
+| [`AddTemplate`](docs/addTemplate.md) | `POST /v1/templates` | Register a verify template |
+| [`ModifyTemplate`](docs/modifyTemplate.md) | `PUT /v1/templates/{templateId}` | Update a verify template |
+| [`RemoveTemplate`](docs/removeTemplate.md) | `DELETE /v1/templates/{templateId}` | Delete a verify template |
 
 Official docs: [sms.ir REST API](https://sms.ir/rest-api/).
 
 ## Verify / OTP
 
-1. Create a template in the panel (fast-send), e.g. `کد تایید شما #CODE# می‌باشد.`
-2. Wait until status is **approved** (`TemplateStatusApproved = 2`).
+1. Register a template with `AddTemplate`, or create one in the panel. The text needs a `#PARAMETER#` placeholder, for example `کد تایید شما #CODE# می‌باشد.`
+2. Wait until status is **approved** (`TemplateStatusApproved = 2`). A new or edited template stays pending until then.
 3. Call `SendVerify` with `TemplateID` and parameters (`Name` without `#`).
 
 ```go
@@ -208,6 +212,11 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - [Today’s send packs](docs/livePack.md)
 - [Sender lines](docs/line.md)
 - [Status codes](docs/statusCode.md)
+- [Templates](docs/templates.md)
+- [Template](docs/template.md)
+- [Add template](docs/addTemplate.md)
+- [Modify template](docs/modifyTemplate.md)
+- [Remove template](docs/removeTemplate.md)
 - [SMS.ir](https://sms.ir)
 - [REST API docs](https://sms.ir/rest-api/)
 - [Official Python SDK](https://github.com/IPeCompany/SmsPanelV2.Python)

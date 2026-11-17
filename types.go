@@ -205,9 +205,20 @@ type ReceivedMessage struct {
 }
 
 // TemplateParameter describes a #NAME# placeholder in a template.
+// Name is written without the surrounding # and is at most 40 characters.
 type TemplateParameter struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+// TemplateRequest is the body for AddTemplate and ModifyTemplate.
+// Type 0 omits the field: create then uses TemplateTypeOther (100), and update keeps the current type.
+// A nil or empty Parameters list is omitted. On update, that leaves the current descriptions in place.
+type TemplateRequest struct {
+	Title        string
+	TemplateText string
+	Type         byte
+	Parameters   []TemplateParameter
 }
 
 // Template is a verify/fast-send template from GET /v1/templates.

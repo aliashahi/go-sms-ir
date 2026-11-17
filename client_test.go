@@ -146,6 +146,140 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+func TestTemplate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/templates/123456" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data": map[string]any{
+				"id":               123456,
+				"title":            "کد تایید ورود",
+				"templateText":     "کد تایید شما #CODE# می‌باشد.",
+				"type":             1,
+				"parameters":       []map[string]any{{"name": "CODE", "description": "کد یکبار مصرف"}},
+				"status":           3,
+				"rejectionReason":  "متن قالب با نوع انتخاب شده مطابقت ندارد.",
+				"creationDateTime": 1628683626,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	tpl, err := cli.Template(context.Background(), 123456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tpl.ID != 123456 || tpl.Status != TemplateStatusRejected || tpl.Type != TemplateTypeOTP {
+		t.Fatalf("tpl=%+v", tpl)
+	}
+	if tpl.RejectionReason == nil || *tpl.RejectionReason == "" {
+		t.Fatalf("reason=%v", tpl.RejectionReason)
+	}
+}
+
+func TestAddAndModifyTemplate(t *testing.T) {
+	var gotMethod string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotBody = map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		id := 123456
+		if r.Method == http.MethodPut {
+			if r.URL.Path != "/v1/templates/123456" {
+				t.Fatalf("path=%s", r.URL.Path)
+			}
+		} else if r.URL.Path != "/v1/templates" {
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data":    id,
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	ctx := context.Background()
+	id, err := cli.AddTemplate(ctx, TemplateRequest{
+		Title:        " کد تایید ورود ",
+		TemplateText: "کد تایید شما #CODE# می‌باشد.",
+		Type:         TemplateTypeOTP,
+		Parameters:   []TemplateParameter{{Name: "#CODE#", Description: "کد یکبار مصرف"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 123456 || gotMethod != http.MethodPost {
+		t.Fatalf("id=%d method=%s", id, gotMethod)
+	}
+	if gotBody["title"] != "کد تایید ورود" || gotBody["type"] != float64(1) {
+		t.Fatalf("body=%v", gotBody)
+	}
+	params, _ := gotBody["parameters"].([]any)
+	if len(params) != 1 {
+		t.Fatalf("params=%v", gotBody["parameters"])
+	}
+	param, _ := params[0].(map[string]any)
+	if param["name"] != "CODE" {
+		t.Fatalf("param=%v", param)
+	}
+
+	id, err = cli.ModifyTemplate(ctx, 123456, TemplateRequest{
+		Title:        "کد تایید ورود",
+		TemplateText: "کد ورود شما #CODE# می‌باشد.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 123456 || gotMethod != http.MethodPut {
+		t.Fatalf("id=%d method=%s", id, gotMethod)
+	}
+	if _, ok := gotBody["type"]; ok {
+		t.Fatalf("type should be omitted: %v", gotBody)
+	}
+	if _, ok := gotBody["parameters"]; ok {
+		t.Fatalf("parameters should be omitted: %v", gotBody)
+	}
+}
+
+func TestRemoveTemplate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/v1/templates/123456" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  1,
+			"message": "موفق",
+			"data":    true,
+		})
+	}))
+	defer srv.Close()
+
+	cli := New("key", 0, WithBaseURL(srv.URL), WithHTTPClient(srv.Client()))
+	if err := cli.RemoveTemplate(context.Background(), 123456); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAddTemplateRequiresPlaceholder(t *testing.T) {
+	cli := New("key", 0)
+	_, err := cli.AddTemplate(context.Background(), TemplateRequest{
+		Title:        "عنوان",
+		TemplateText: "بدون متغیر",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestMessageReport(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/send/89545112" {

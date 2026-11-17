@@ -2,8 +2,8 @@
 //
 // It is not affiliated with SMS.ir or IPeCompany. It covers the same surface as the official Python SDK
 // (https://github.com/IPeCompany/SmsPanelV2.Python): bulk and like-to-like
-// sends, verify/OTP templates, reports, inbound messages, credit, lines, and
-// template listing.
+// sends, verify/OTP templates (list, get, create, update, and delete), reports,
+// inbound messages, credit, and lines.
 //
 // The package depends only on the Go standard library. Pass credentials into
 // [New]; it never reads environment variables or application config.
