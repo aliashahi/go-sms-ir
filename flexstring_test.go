@@ -24,6 +24,14 @@ func TestFlexStringUnmarshal(t *testing.T) {
 			t.Fatalf("raw %s: got %q want %q", tc.raw, s, tc.want)
 		}
 	}
+	raw, err := json.Marshal(FlexString("09121234567"))
+	if err != nil || string(raw) != `"09121234567"` {
+		t.Fatalf("marshal %s err=%v", raw, err)
+	}
+	var bad FlexString
+	if err := json.Unmarshal([]byte("true"), &bad); err == nil {
+		t.Fatal("expected error")
+	}
 }
 
 func TestMessageReportMobileNumber(t *testing.T) {

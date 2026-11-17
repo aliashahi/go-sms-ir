@@ -31,6 +31,7 @@ type Client struct {
 	baseURL    string
 	userAgent  string
 	httpClient *http.Client
+	customHTTP bool
 }
 
 // Option configures a Client.
@@ -48,6 +49,7 @@ func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) {
 		if hc != nil {
 			c.httpClient = hc
+			c.customHTTP = true
 		}
 	}
 }
@@ -64,7 +66,7 @@ func WithUserAgent(ua string) Option {
 // WithTimeout sets the default HTTP client timeout. Ignored if WithHTTPClient was used.
 func WithTimeout(d time.Duration) Option {
 	return func(c *Client) {
-		if d > 0 {
+		if d > 0 && !c.customHTTP {
 			c.httpClient = &http.Client{Timeout: d}
 		}
 	}
@@ -103,8 +105,13 @@ func (c *Client) LineNumber() int64 {
 
 // SendSMS sends one free-text message via the bulk endpoint.
 func (c *Client) SendSMS(ctx context.Context, mobile, message string) (*BulkSendResult, error) {
+	var line int64
+	if c != nil {
+		line = c.lineNumber
+	}
+
 	return c.SendBulk(ctx, BulkSendRequest{
-		LineNumber:  c.lineNumber,
+		LineNumber:  line,
 		MessageText: message,
 		Mobiles:     []string{mobile},
 	})
@@ -133,14 +140,10 @@ func (c *Client) SendBulk(ctx context.Context, req BulkSendRequest) (*BulkSendRe
 		return nil, fmt.Errorf("smsir: at most 100 mobiles are allowed")
 	}
 
-	mobiles := make([]string, 0, len(req.Mobiles))
-	for _, m := range req.Mobiles {
-		mobiles = append(mobiles, FormatMobile(m))
-	}
 	body := map[string]any{
 		"lineNumber":  req.LineNumber,
 		"messageText": req.MessageText,
-		"mobiles":     mobiles,
+		"mobiles":     formatMobiles(req.Mobiles),
 	}
 	if req.SendDateTime != nil {
 		body["sendDateTime"] = *req.SendDateTime
@@ -178,14 +181,10 @@ func (c *Client) SendLikeToLike(ctx context.Context, req LikeToLikeRequest) (*Bu
 		return nil, fmt.Errorf("smsir: at most 100 mobiles are allowed")
 	}
 
-	mobiles := make([]string, 0, len(req.Mobiles))
-	for _, m := range req.Mobiles {
-		mobiles = append(mobiles, FormatMobile(m))
-	}
 	body := map[string]any{
 		"lineNumber":   req.LineNumber,
 		"messageTexts": req.MessageTexts,
-		"mobiles":      mobiles,
+		"mobiles":      formatMobiles(req.Mobiles),
 	}
 	if req.SendDateTime != nil {
 		body["sendDateTime"] = *req.SendDateTime
@@ -372,12 +371,8 @@ func (c *Client) TodayReport(ctx context.Context, pageSize, pageNumber int) ([]M
 // fromDate and toDate are Unix UTC. pageSize max is 100 (API default 100).
 func (c *Client) ArchiveReport(ctx context.Context, fromDate, toDate *int64, pageSize, pageNumber int) ([]MessageReport, error) {
 	q := pageQuery(pageSize, pageNumber)
-	if fromDate != nil {
-		q.Set("fromDate", strconv.FormatInt(*fromDate, 10))
-	}
-	if toDate != nil {
-		q.Set("toDate", strconv.FormatInt(*toDate, 10))
-	}
+	setUnixQuery(q, "fromDate", fromDate)
+	setUnixQuery(q, "toDate", toDate)
 	var out []MessageReport
 	if _, err := c.doJSON(ctx, http.MethodGet, "/v1/send/archive", q, nil, &out); err != nil {
 		return nil, err
@@ -432,12 +427,8 @@ func (c *Client) TodayReceived(ctx context.Context, pageSize, pageNumber int, so
 // fromDate and toDate are Unix UTC. An empty mobile lists every sender.
 func (c *Client) ArchiveReceived(ctx context.Context, fromDate, toDate *int64, pageSize, pageNumber int, mobile string) ([]ReceivedMessage, error) {
 	q := pageQuery(pageSize, pageNumber)
-	if fromDate != nil {
-		q.Set("fromDate", strconv.FormatInt(*fromDate, 10))
-	}
-	if toDate != nil {
-		q.Set("toDate", strconv.FormatInt(*toDate, 10))
-	}
+	setUnixQuery(q, "fromDate", fromDate)
+	setUnixQuery(q, "toDate", toDate)
 	if strings.TrimSpace(mobile) != "" {
 		q.Set("mobile", FormatMobile(mobile))
 	}
@@ -609,6 +600,21 @@ func templateBody(req TemplateRequest) (map[string]any, error) {
 	return body, nil
 }
 
+func formatMobiles(in []string) []string {
+	out := make([]string, len(in))
+	for i, mobile := range in {
+		out[i] = FormatMobile(mobile)
+	}
+
+	return out
+}
+
+func setUnixQuery(q url.Values, key string, v *int64) {
+	if v != nil {
+		q.Set(key, strconv.FormatInt(*v, 10))
+	}
+}
+
 func pageQuery(pageSize, pageNumber int) url.Values {
 	q := url.Values{}
 	if pageSize > 0 {
@@ -676,12 +682,6 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		return resp.StatusCode, fmt.Errorf("smsir: decode response (http %d): %w; body=%s", resp.StatusCode, err, truncate(string(raw), 200))
 	}
 
-	if resp.StatusCode == http.StatusUnauthorized || env.Status == StatusInvalidAPIKey || env.Status == StatusInactiveAPIKey {
-		return resp.StatusCode, &APIError{HTTPStatus: resp.StatusCode, Status: env.Status, Message: env.Message}
-	}
-	if resp.StatusCode == http.StatusTooManyRequests || env.Status == StatusRateLimited {
-		return resp.StatusCode, &APIError{HTTPStatus: resp.StatusCode, Status: env.Status, Message: env.Message}
-	}
 	if resp.StatusCode >= 400 || env.Status != StatusOK {
 		return resp.StatusCode, &APIError{HTTPStatus: resp.StatusCode, Status: env.Status, Message: env.Message}
 	}
